@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
     inputs:
       xcode-version:
-        description: 'Xcode version for setup-xcode (e.g. 27.1 or latest-stable)'
-        default: 'latest-stable'
+        description: 'Xcode version for setup-xcode (upstream CI uses 27.1)'
+        default: '27.1'
         required: false
   push:
     branches:
@@ -18,7 +18,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: ${{ inputs.xcode-version || 'latest-stable' }}
+          xcode-version: ${{ inputs.xcode-version || '27.1' }}
 
       - name: Show toolchain
         run: |
