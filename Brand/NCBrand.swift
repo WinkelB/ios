@@ -156,6 +156,26 @@ final class NCBrandOptions: @unchecked Sendable {
             }
         }
 
+#if SIDELOAD
+        // Fork-only test build: the re-signing tool (e.g. Sideloadly) registers its own app groups,
+        // so fall back to the groups granted by the embedded provisioning profile.
+        if let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+           let data = try? Data(contentsOf: url),
+           let start = data.range(of: Data("<?xml".utf8)),
+           let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+           let profile = try? PropertyListSerialization.propertyList(from: data.subdata(in: start.lowerBound..<end.upperBound), format: nil) as? [String: Any],
+           let entitlements = profile["Entitlements"] as? [String: Any],
+           let groups = entitlements["com.apple.security.application-groups"] as? [String],
+           let firstGroup = groups.first {
+            if !groups.contains(capabilitiesGroup) {
+                capabilitiesGroup = firstGroup
+            }
+            if !groups.contains(capabilitiesGroupApps) {
+                capabilitiesGroupApps = firstGroup
+            }
+        }
+#endif
+
         if pushNotificationServerProxy.isEmpty,
             brand == "Nextcloud" {
             pushNotificationServerProxy = "https://push-notifications.nextcloud.com"

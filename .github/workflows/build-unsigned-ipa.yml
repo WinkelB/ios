@@ -36,6 +36,9 @@ jobs:
           xcodebuild -version
           ls /Applications | grep -i xcode || true
 
+      - name: Enable sideload fallback for app groups
+        run: sed -i '' 's/^#if SIDELOAD$/#if true/' Brand/NCBrand.swift && grep -n "^#if true" Brand/NCBrand.swift
+
       - name: Archive without code signing
         run: |
           set -o pipefail
@@ -58,10 +61,31 @@ jobs:
           path: build.log
           retention-days: 7
 
-      - name: Package IPA
+      - name: Package IPA for sideloading
+        env:
+          BUNDLE_ID: de.winkelb.nextcloud.mtlstest
         run: |
+          set -euo pipefail
           mkdir -p build/Payload
           cp -R build/Nextcloud.xcarchive/Products/Applications/*.app build/Payload/
+          APP=$(ls -d build/Payload/*.app)
+
+          # A free Apple ID gets 10 App IDs per week and cannot use Nextcloud's IDs or groups:
+          # drop the extensions, use an own bundle ID and app group.
+          rm -rf "$APP/PlugIns" "$APP/Extensions"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleDisplayName" "$APP/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string NC mTLS Test" "$APP/Info.plist"
+
+          # Ad-hoc signature carrying the app group entitlement, so Sideloadly registers a group.
+          /usr/libexec/PlistBuddy \
+            -c "Add :com.apple.security.application-groups array" \
+            -c "Add :com.apple.security.application-groups:0 string group.$BUNDLE_ID" \
+            build/sideload.entitlements
+          find "$APP/Frameworks" -maxdepth 1 \( -name "*.framework" -o -name "*.dylib" \) -exec codesign --force --sign - {} \; || true
+          codesign --force --sign - --entitlements build/sideload.entitlements "$APP"
+          codesign -d --entitlements - "$APP"
+
           cd build && zip -qry Nextcloud-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
