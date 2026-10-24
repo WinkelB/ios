@@ -157,6 +157,8 @@ final class NCBrandOptions: @unchecked Sendable {
         }
 
 #if SIDELOAD
+        FileManager.installSideloadAppGroupFallback()
+
         // Fork-only test build: the re-signing tool (e.g. Sideloadly) registers its own app groups,
         // so fall back to the groups granted by the embedded provisioning profile.
         if let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
@@ -398,3 +400,36 @@ final class NCBrandColor: @unchecked Sendable {
         return .white
     }
 }
+
+#if SIDELOAD
+// Fork-only test build: if no usable app group container is granted, use a private directory instead,
+// so database, logs and caches still have a place to live.
+extension FileManager {
+    private static var sideloadFallbackInstalled = false
+
+    static func installSideloadAppGroupFallback() {
+        guard !sideloadFallbackInstalled,
+              let original = class_getInstanceMethod(FileManager.self, #selector(FileManager.containerURL(forSecurityApplicationGroupIdentifier:))),
+              let replacement = class_getInstanceMethod(FileManager.self, #selector(FileManager.sideloadContainerURL(forSecurityApplicationGroupIdentifier:))) else {
+            return
+        }
+        sideloadFallbackInstalled = true
+        method_exchangeImplementations(original, replacement)
+    }
+
+    @objc func sideloadContainerURL(forSecurityApplicationGroupIdentifier groupIdentifier: String) -> URL? {
+        // After the exchange this calls the original implementation.
+        if let url = sideloadContainerURL(forSecurityApplicationGroupIdentifier: groupIdentifier),
+           fileExists(atPath: url.path),
+           isWritableFile(atPath: url.path) {
+            return url
+        }
+        guard let support = urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let url = support.appendingPathComponent("SideloadAppGroup", isDirectory: true)
+        try? createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+}
+#endif
